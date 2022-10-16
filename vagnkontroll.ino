@@ -8,7 +8,8 @@ int const LargeLampPin2 = 7; //CONTROLLINO_D3;
 int const DoorSwitchB = 15; //CONTROLLINO_A1;
 int const DoorSwitchC = 16; //CONTROLLINO_A2;
 int const BedSwitchA = 17; //CONTROLLINO_A3;
-int const BedSwitchB = 21; //CONTROLLINO_A4;
+int const BedSwitchB = 20; //CONTROLLINO_A4;
+int const BedSwitchC = 21; //CONTROLLINO_A5;
 //int const InsideTempPin = ?;
 //int const OutsideTempPin = ?;
 
@@ -119,7 +120,8 @@ public:
   }
   void loopFunction() override {
     int av = analogRead(Pin);
-    Serial.println(av);
+    //sprintf(StrBuf, "Analog read of pin %d gives %d", Pin, av);
+    //Serial.println(StrBuf);
     handleInput(av > ADC_Threshold);
   }
 private:
@@ -149,10 +151,12 @@ void loop() {
   static Output OutsideLampOutput(OutsideLampPin);
   static Lamp OutsideLamp(&OutsideLampOutput);
   static LightSwitch OutsideLampSwitch(DoorSwitchC, &OutsideLamp);
+  static LightSwitchADC OutsideLampSwitch2(BedSwitchC, &OutsideLamp);
 
   SmallLampSwitch1.loopFunction();
   SmallLampSwitch2.loopFunction();
   LargeLampSwitch1.loopFunction();
   LargeLampSwitch2.loopFunction();
   OutsideLampSwitch.loopFunction();
+  OutsideLampSwitch2.loopFunction();
 }
