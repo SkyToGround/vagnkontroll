@@ -1,16 +1,14 @@
-#include <Controllino.h>  /* Usage of CONTROLLINO library allows you to use CONTROLLINO_xx aliases in your sketch. */
-#include <OneWire.h>
-#include <DallasTemperature.h>
+//#include <Controllino.h>  /* Usage of CONTROLLINO library allows you to use CONTROLLINO_xx aliases in your sketch. */
+int const SmallLampPin = 6; //CONTROLLINO_D2;
+int const DoorSwitchA = 14; //CONTROLLINO_A0;
 
-int const OutsideLampPin = CONTROLLINO_D6;
-int const LargeLampPin1 = CONTROLLINO_D1;
-int const LargeLampPin2 = CONTROLLINO_D3;
-int const SmallLampPin = CONTROLLINO_D2;
-int const DoorSwitchA = CONTROLLINO_A0;
-int const DoorSwitchB = CONTROLLINO_A1;
-int const DoorSwitchC = CONTROLLINO_A2;
-int const BedSwitchA = CONTROLLINO_A3;
-int const BedSwitchB = CONTROLLINO_A4;
+int const OutsideLampPin = 18; //CONTROLLINO_D6;
+int const LargeLampPin1 = 5; //CONTROLLINO_D1;
+int const LargeLampPin2 = 7; //CONTROLLINO_D3;
+int const DoorSwitchB = 15; //CONTROLLINO_A1;
+int const DoorSwitchC = 16; //CONTROLLINO_A2;
+int const BedSwitchA = 17; //CONTROLLINO_A3;
+int const BedSwitchB = 21; //CONTROLLINO_A4;
 //int const InsideTempPin = ?;
 //int const OutsideTempPin = ?;
 
@@ -18,25 +16,21 @@ int const BedSwitchB = CONTROLLINO_A4;
 //int const BedSwitchA = 12;
 int const InsideTempPin = 3;
 // int const OutsideTempPin = ?;
+char StrBuf[50];
 
 
 class Output {
   public:
   Output(int Pin) : OutputPin(Pin) {
-    Serial.print("Output pin is: ");
-    Serial.println(OutputPin);
-    pinMode(OutputPin, OUTPUT);
-    digitalWrite(OutputPin, LOW);
+    pinMode(Pin, OUTPUT);
+    digitalWrite(Pin, LOW);
   }
   void setState(int NewState) {
-    Serial.print("Write ");
-    Serial.print(NewState);
-    Serial.print(" to pin ");
-    Serial.println(OutputPin);
-//digitalWrite(OutputPin, NewState);
+    Serial.println(StrBuf);
+    digitalWrite(OutputPin, NewState);
   }
 private:
-  int OutputPin;
+  int const OutputPin;
 };
 
 class LampBase {
@@ -58,20 +52,20 @@ private:
 
 class DualLamp : public LampBase {
   public:
-  DualLamp(Output &Lamp1, Output &Lamp2) : Lamp1(Lamp1), Lamp2(Lamp2) {}
+  DualLamp(Output *Lamp1, Output *Lamp2) : Lamp1Ptr(Lamp1), Lamp2Ptr(Lamp2) {}
 
   void setState(int NewState) override {
-    Lamp1.setState(NewState);
-    Lamp2.setState(NewState);
+    Lamp1Ptr->setState(NewState);
+    Lamp2Ptr->setState(NewState);
   }
 private:
-  Output &Lamp1;
-  Output &Lamp2;
+  Output *Lamp1Ptr;
+  Output *Lamp2Ptr;
 };
 
 class Lamp : public LampBase {
 public:
-  Lamp(Output *LampOutput) : Output(Output), CurrentState(LOW) {}
+  Lamp(Output *LampOutput) : Output(LampOutput) {}
   void setState(int NewState) override {
     Serial.print("Output set to ");
     Serial.println(NewState);
@@ -79,15 +73,12 @@ public:
   }
 private:
   Output *Output;
-  int CurrentState;
 };
 
-class LightSwitch {
-public:
-  LightSwitch(int InputPin, LampBase *ControlLamp) : Pin(InputPin), LastValue(digitalRead(InputPin)), UsedLamp(ControlLamp) {
-    pinMode(InputPin, INPUT);
-  }
-  void loopFunction() {
+class LightSwitchBase {
+  public:
+  LightSwitchBase(LampBase *ControlLamp, int CurrentValue) : LastValue(CurrentValue), UsedLamp(ControlLamp) {}
+  void handleInput(int CurrentValue) {
     unsigned long CurrentTime = millis();
     if (CurrentTime < LastChangeTime) {
       LastChangeTime = 0; 
@@ -95,136 +86,47 @@ public:
     if (CurrentTime < LastChangeTime + ChangeTimeout) {
       return;
     }
-    int CurrentValue = digitalRead(Pin);
     if (CurrentValue != LastValue) {
-      Serial.println("State switched");
       LastValue = CurrentValue;
       LastChangeTime = CurrentTime;
       UsedLamp->switchState();
     }
   }
+  virtual void loopFunction() = 0;
 private:
   const unsigned long ChangeTimeout{100};
   unsigned long LastChangeTime{0};
-  int Pin;
   int LastValue;
   LampBase *UsedLamp;
 };
 
-class FanController {
+class LightSwitch : public LightSwitchBase {
 public:
-	FanController(int PowerPin, int SpeedPin) : OnPin(PowerPin), SpeedControlPin(SpeedPin) {
-		pinMode(PowerPin, OUTPUT);
-		digitalWrite(PowerPin, 0);
-		pinMode(SpeedPin, OUTPUT);
-
-    const word PWM_FREQ_HZ = 25000; //Adjust this value to adjust the frequency (Frequency in HZ!) (Set currently to 25kHZ)
-    const word TCNT1_TOP = 16000000/(2*PWM_FREQ_HZ);
-
-		TCCR1A = 0;
-		TCCR1B = 0;
-		TCNT1  = 0;
-	  // Set Timer1 configuration
-	  // COM1A(1:0) = 0b10   (Output A clear rising/set falling)
-	  // COM1B(1:0) = 0b00   (Output B normal operation)
-	  // WGM(13:10) = 0b1010 (Phase correct PWM)
-	  // ICNC1      = 0b0    (Input capture noise canceler disabled)
-	  // ICES1      = 0b0    (Input capture edge select disabled)
-	  // CS(12:10)  = 0b001  (Input clock select = clock/1)
-	  TCCR1A |= (1 << COM1A1) | (1 << WGM11);
-	  TCCR1B |= (1 << WGM13) | (1 << CS10);
-	  ICR1 = TCNT1_TOP;
-	}
-	
-	void turnOn(bool On) {}
-	void setSpeed(float Speed) {}
-	
-	void loopFunction() {}
+  LightSwitch(int InputPin, LampBase *ControlLamp) : Pin(InputPin), LightSwitchBase(ControlLamp, digitalRead(Pin)) {
+    pinMode(InputPin, INPUT);
+  }
+  void loopFunction() override {
+    handleInput(digitalRead(Pin));
+  }
 private:
-	int OnPin;
-	int SpeedControlPin;
+  int Pin;
 };
 
-class TemperatureConsumer {
+class LightSwitchADC : public LightSwitchBase {
 public:
-	virtual void setCurrentTemperature(float) = 0;
-};
-
-class TemperatureController : TemperatureConsumer {
-public:
-	enum class Mode {Off, Maintain, TempControl};
-	TemperatureController(int HeaterPin, FanController &HeaterFan) : OutputPin(HeaterPin), HeaterFan(HeaterFan) {
-		
-	}
-	
-	void setMode(TemperatureController::Mode NewMode) {
-		CMode = NewMode;
-	}
-	
-	void setCurrentTemperature(float CurrentTemp) override {
-		
-	}
-	
-	void loopFunction() {}
+  LightSwitchADC(int InputPin, LampBase *ControlLamp) : Pin(InputPin), LightSwitchBase(ControlLamp, analogRead(Pin) > ADC_Threshold) {
+    //pinMode(InputPin, INPUT);
+  }
+  void loopFunction() override {
+    int av = analogRead(Pin);
+    Serial.println(av);
+    handleInput(av > ADC_Threshold);
+  }
 private:
-	Mode CMode{Mode::Maintain};
-	float MaintainLow{5.0};
-	float MaintainHigh{26.0};
-	float TempControlTemp{24.0};
-	float TempHysteresis{1.0};
-	int OutputPin;
-	FanController &HeaterFan;
+  const int ADC_Threshold{200};
+  int Pin;
 };
 
-class TemperatureSensor {
-	public:
-		TemperatureSensor(int InputPin) : Bus(InputPin), Sensors(&Bus) {
-			Sensors.begin();
-			Sensors.getAddress(Address, 0);
-			if (Address == 0) {
-				return;
-			}
-			Sensors.setResolution(Address, 12);
-			Sensors.setWaitForConversion(false);
-			Sensors.requestTemperatures();
-		}
-		void loopFunction() {
-			if (Address == 0) {
-				return;
-			}
-			if (Sensors.isConversionComplete()) {
-				 Serial.println(Sensors.getTempC(Address));
-				 Sensors.requestTemperatures();
-			}
-		}
-		
-private:
-	OneWire Bus;
-	DallasTemperature Sensors;
-	DeviceAddress Address{0};
-};
-
-
-// Output LargeLampOutput1(LargeLampPin1);
-// Output LargeLampOutput2(LargeLampPin2);
-// DualLamp LargeLamp(&LargeLampOutput1, &LargeLampOutput2);
-// LightSwitch LargeLampSwitch1(DoorSwitchB, &LargeLamp);
- 
-// Output OutsideLampOutput(OutsideLampPin);
-
-
-
-// Lamp OutsideLamp(OutsideLampOutput);
-
-
-// LightSwitch SmallLampSwitch2(BedSwitchA, SmallLamp);
-
-// 
-// LightSwitch LargeLampSwitch2(BedSwitchB, LargeLamp);
-
-// LightSwitch OutsideLampSwitch(DoorSwitchC, OutsideLamp);
-
-// TemperatureSensor TempSensor(InsideTempPin);
 
 void setup() {
   Serial.begin(9600);
@@ -232,17 +134,25 @@ void setup() {
 }
 
 
-Output SmallLampOutput(SmallLampPin);
-Lamp SmallLamp(&SmallLampOutput);
-LightSwitch SmallLampSwitch1(DoorSwitchA, &SmallLamp);
-
-
 void loop() {
-  digitalWrite(CONTROLLINO_D2, digitalRead(CONTROLLINO_A0));
-  // SmallLampSwitch1.loopFunction();
-  // SmallLampSwitch2.loopFunction();
-  // LargeLampSwitch1.loopFunction();
-  // LargeLampSwitch2.loopFunction();
-  // OutsideLampSwitch.loopFunction();
-	// TempSensor.loopFunction();
+  static Output SmallLampOutput(SmallLampPin);
+  static Lamp SmallLamp(&SmallLampOutput);
+  static LightSwitch SmallLampSwitch1(DoorSwitchA, &SmallLamp);
+  static LightSwitch SmallLampSwitch2(BedSwitchA, &SmallLamp);
+
+  static Output LargeLampOutput1(LargeLampPin1);
+  static Output LargeLampOutput2(LargeLampPin2);
+  static DualLamp LargeLamp(&LargeLampOutput1, &LargeLampOutput2);
+  static LightSwitch LargeLampSwitch1(DoorSwitchB, &LargeLamp);
+  static LightSwitchADC LargeLampSwitch2(BedSwitchB, &LargeLamp);
+
+  static Output OutsideLampOutput(OutsideLampPin);
+  static Lamp OutsideLamp(&OutsideLampOutput);
+  static LightSwitch OutsideLampSwitch(DoorSwitchC, &OutsideLamp);
+
+  SmallLampSwitch1.loopFunction();
+  SmallLampSwitch2.loopFunction();
+  LargeLampSwitch1.loopFunction();
+  LargeLampSwitch2.loopFunction();
+  OutsideLampSwitch.loopFunction();
 }
